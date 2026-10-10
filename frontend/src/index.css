@@ -1,0 +1,183 @@
+@import "tailwindcss";
+
+@theme {
+  --font-sans: "Inter", ui-sans-serif, system-ui, -apple-system, "Segoe UI", Roboto,
+    "Helvetica Neue", Arial, "Noto Sans", sans-serif;
+  --font-display: "Manrope", "Inter", ui-sans-serif, system-ui, "Segoe UI", Roboto,
+    "Helvetica Neue", Arial, sans-serif;
+
+  /* Fresh leaf green — primary brand accent */
+  --color-brand-50: #effaf2;
+  --color-brand-100: #d8f2e1;
+  --color-brand-200: #b1e6c6;
+  --color-brand-300: #7dd3a3;
+  --color-brand-400: #47b97e;
+  --color-brand-500: #24a160;
+  --color-brand-600: #17854e;
+  --color-brand-700: #146a40;
+  --color-brand-800: #135535;
+  --color-brand-900: #11462d;
+  --color-brand-950: #08271a;
+
+  /* Deep forest green — anchors and dark surfaces */
+  --color-forest-50: #f1f7f3;
+  --color-forest-100: #ddece2;
+  --color-forest-200: #bcd9c8;
+  --color-forest-300: #8fbda6;
+  --color-forest-400: #5d9b7f;
+  --color-forest-500: #3d7e63;
+  --color-forest-600: #2b6450;
+  --color-forest-700: #235142;
+  --color-forest-800: #1c4134;
+  --color-forest-900: #16362c;
+  --color-forest-950: #0a1f18;
+
+  /* Warm cream / earthy neutrals */
+  --color-cream-50: #fbfaf5;
+  --color-cream-100: #f4f1e6;
+  --color-cream-200: #ebe5d3;
+  --color-cream-300: #ddd3b9;
+  --color-cream-400: #c8b996;
+  --color-cream-500: #b09d74;
+  --color-cream-600: #96815a;
+
+  --color-sand-50: #faf8f1;
+  --color-sand-100: #f2eee0;
+  --color-sand-200: #e6dfc8;
+  --color-sand-300: #d6c9a3;
+  --color-sand-400: #c0ab79;
+  --color-sand-500: #a88f58;
+
+  /* Semantic surfaces, borders and ink (warm, earthy) */
+  --color-canvas: #f5f2e9;
+  --color-surface: #ffffff;
+  --color-surface-muted: #faf7ee;
+  --color-surface-sunken: #efe9da;
+  --color-border: #e6dfca;
+  --color-border-strong: #d2c7aa;
+  --color-ink: #1d2a20;
+  --color-ink-soft: #42513f;
+  --color-ink-muted: #6c7662;
+
+  --radius-card: 1rem;
+  --radius-panel: 1.25rem;
+
+  --shadow-card: 0 1px 2px rgba(56, 44, 22, 0.05), 0 12px 32px -20px rgba(56, 44, 22, 0.28);
+  --shadow-soft: 0 1px 2px rgba(56, 44, 22, 0.05), 0 4px 14px -10px rgba(56, 44, 22, 0.18);
+  --shadow-pop: 0 20px 50px -22px rgba(26, 36, 27, 0.45);
+}
+
+@layer base {
+  html {
+    -webkit-font-smoothing: antialiased;
+    text-rendering: optimizeLegibility;
+    scroll-behavior: smooth;
+  }
+
+  body {
+    font-family: var(--font-sans);
+    background-color: var(--color-canvas);
+    color: var(--color-ink);
+  }
+
+  h1,
+  h2,
+  h3,
+  h4 {
+    letter-spacing: -0.011em;
+  }
+
+  :focus-visible {
+    outline: 2px solid var(--color-brand-600);
+    outline-offset: 2px;
+  }
+
+  ::selection {
+    background-color: var(--color-brand-200);
+    color: var(--color-forest-900);
+  }
+}
+
+@layer components {
+  /* Display headings — premium, slightly tighter. */
+  .font-display {
+    font-family: var(--font-display);
+  }
+
+  /* Repeating leaf speckle for dark hero/band surfaces. */
+  .leaf-pattern {
+    background-image: radial-gradient(rgba(255, 255, 255, 0.07) 1px, transparent 1.5px);
+    background-size: 22px 22px;
+  }
+
+  .hero-gradient {
+    background-image: linear-gradient(
+      100deg,
+      rgba(5, 24, 16, 0.92) 0%,
+      rgba(8, 39, 26, 0.8) 40%,
+      rgba(16, 54, 44, 0.45) 100%
+    );
+  }
+
+  .hero-gradient-left {
+    background-image: linear-gradient(
+      90deg,
+      rgba(6, 26, 17, 0.92) 0%,
+      rgba(10, 36, 25, 0.78) 45%,
+      rgba(10, 40, 28, 0.25) 100%
+    );
+  }
+
+  .text-balance {
+    text-wrap: balance;
+  }
+}
+
+/* Leaflet needs a defined height wherever it is mounted. */
+.leaflet-container {
+  width: 100%;
+  height: 100%;
+  border-radius: 0.9rem;
+  font-family: inherit;
+  background: var(--color-surface-sunken);
+}
+
+.leaflet-control-attribution {
+  font-size: 10px !important;
+  background: rgba(255, 255, 255, 0.82) !important;
+}
+
+.leaflet-bar a {
+  color: var(--color-ink-soft) !important;
+}
+
+/* Small, neutral scrollbar for overflowing panels. */
+.thin-scroll::-webkit-scrollbar {
+  width: 8px;
+  height: 8px;
+}
+.thin-scroll::-webkit-scrollbar-thumb {
+  background: rgba(31, 92, 57, 0.24);
+  border-radius: 999px;
+}
+.thin-scroll::-webkit-scrollbar-track {
+  background: transparent;
+}
+
+.no-scrollbar {
+  scrollbar-width: none;
+}
+.no-scrollbar::-webkit-scrollbar {
+  display: none;
+}
+
+@media (prefers-reduced-motion: reduce) {
+  *,
+  *::before,
+  *::after {
+    animation-duration: 0.001ms !important;
+    animation-iteration-count: 1 !important;
+    transition-duration: 0.001ms !important;
+    scroll-behavior: auto !important;
+  }
+}
