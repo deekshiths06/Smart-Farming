@@ -1,4 +1,64 @@
-import type { CropStatus } from "../types/crop";
+import type { CropEvaluation, CropStatus, MatchCategory } from "../types/crop";
+
+export const MATCH_CATEGORY_ORDER: MatchCategory[] = [
+  "good_match",
+  "possible_option",
+  "needs_more_information",
+  "important_limitations",
+];
+
+export const MATCH_CATEGORY_LABELS: Record<MatchCategory, string> = {
+  good_match: "Good match",
+  possible_option: "Possible option",
+  needs_more_information: "Needs more information",
+  important_limitations: "Important limitations",
+};
+
+export const MATCH_CATEGORY_HINTS: Record<MatchCategory, string> = {
+  good_match:
+    "Matches the crop's documented requirements on the recorded soil, water, season and this location's forecast, with every scored factor checked.",
+  possible_option:
+    "Looks promising on what is recorded so far, but at least one documented requirement could not be checked yet.",
+  needs_more_information:
+    "Not enough recorded information about this field to judge the crop yet — that is missing data, not a bad crop.",
+  important_limitations:
+    "A recorded requirement does not match this field right now (for example an essential soil or water need, or the current season).",
+};
+
+export const MATCH_CATEGORY_TONE: Record<
+  MatchCategory,
+  "success" | "warning" | "danger" | "neutral"
+> = {
+  good_match: "success",
+  possible_option: "warning",
+  needs_more_information: "neutral",
+  important_limitations: "danger",
+};
+
+/** Derive the match category, falling back for older persisted evaluations. */
+export function matchCategoryOf(result: CropEvaluation): MatchCategory {
+  if (result.match_category && MATCH_CATEGORY_ORDER.includes(result.match_category)) {
+    return result.match_category;
+  }
+  if (result.status === "needs_information") return "needs_more_information";
+  if (result.status === "not_recommended") return "important_limitations";
+  return result.preliminary ? "possible_option" : "good_match";
+}
+
+/** The seasons a crop documents, from its own evaluation payload. */
+export function cropSeasons(result: CropEvaluation): string[] {
+  const season = result.factors?.season?.requirement?.allowed_values;
+  return Array.isArray(season) ? (season as string[]) : [];
+}
+
+export const CROP_CATEGORY_LABELS: Record<string, string> = {
+  cereal: "Cereal",
+  millet: "Millet",
+  pulse: "Pulse",
+  oilseed: "Oilseed",
+  fibre: "Fibre",
+  vegetable: "Vegetable",
+};
 
 export const CROP_STATUS_LABELS: Record<CropStatus, string> = {
   suitable: "Potentially suitable",

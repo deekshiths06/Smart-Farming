@@ -78,6 +78,9 @@ class Field(Base):
     crop_recommendations = relationship(
         "CropRecommendation", back_populates="field", cascade="all, delete-orphan"
     )
+    actions = relationship(
+        "FieldAction", back_populates="field", cascade="all, delete-orphan"
+    )
 
     __table_args__ = (
         CheckConstraint(

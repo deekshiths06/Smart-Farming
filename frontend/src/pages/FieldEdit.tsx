@@ -3,6 +3,7 @@ import { Link, useNavigate, useParams } from "react-router-dom";
 import { ArrowLeft, Check, Info, Save } from "lucide-react";
 import FieldMap from "../components/FieldMap";
 import { fieldsApi } from "../services/fields";
+import { useFields } from "../hooks/useFields";
 import { formatArea } from "../lib/geo";
 import {
   AREA_UNIT_LABELS,
@@ -15,6 +16,7 @@ import type { AreaUnit, Field, WaterAvailability, WaterSource } from "../types/f
 export default function FieldEdit() {
   const { id } = useParams<{ id: string }>();
   const navigate = useNavigate();
+  const { reload: reloadFields } = useFields();
 
   const [field, setField] = useState<Field | null>(null);
   const [error, setError] = useState<string | null>(null);
@@ -108,6 +110,9 @@ export default function FieldEdit() {
         payload.location_confirmed = true;
       }
       await fieldsApi.update(field.id, payload);
+      // Refresh the shared field context so the new location/water values flow
+      // into recommendations instead of leaving stale ones on screen.
+      await reloadFields();
       navigate(`/fields/${field.id}`);
     } catch (err) {
       const verbose = err as { response?: { data?: { detail?: string } } };

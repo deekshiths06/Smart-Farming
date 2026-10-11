@@ -31,3 +31,7 @@ class User(Base):
     crop_recommendations = relationship(
         "CropRecommendation", back_populates="owner", passive_deletes=True
     )
+    actions = relationship("FieldAction", back_populates="owner", passive_deletes=True)
+    disease_assessments = relationship(
+        "DiseaseAssessment", back_populates="owner", passive_deletes=True
+    )

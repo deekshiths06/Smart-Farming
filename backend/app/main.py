@@ -4,7 +4,7 @@ from contextlib import asynccontextmanager
 from fastapi import FastAPI
 from fastapi.middleware.cors import CORSMiddleware
 
-from app.api import admin, auth, crops, fields, health, location, soil
+from app.api import actions, admin, auth, catalogue, crops, disease, fields, health, location, soil
 from app.core.config import settings
 
 logger = logging.getLogger("annadata")
@@ -53,3 +53,6 @@ app.include_router(location.router, prefix="/api/location", tags=["location"])
 app.include_router(admin.router, prefix="/api/admin", tags=["admin"])
 app.include_router(soil.router, prefix="/api/fields/{field_id}/soil", tags=["soil"])
 app.include_router(crops.router, prefix="/api", tags=["crops"])
+app.include_router(catalogue.router, prefix="/api/catalogue", tags=["catalogue"])
+app.include_router(actions.router, prefix="/api", tags=["actions"])
+app.include_router(disease.router, prefix="/api/disease", tags=["disease"])

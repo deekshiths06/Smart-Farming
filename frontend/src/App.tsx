@@ -11,6 +11,8 @@ import FieldEdit from "./pages/FieldEdit";
 import Weather from "./pages/Weather";
 import SoilIntelligence from "./pages/SoilIntelligence";
 import CropRecommendations from "./pages/CropRecommendations";
+import ActionPlanner from "./pages/ActionPlanner";
+import CropDisease from "./pages/CropDisease";
 import Settings from "./pages/Settings";
 import Admin from "./pages/Admin";
 
@@ -29,6 +31,8 @@ function App() {
         <Route path="/weather" element={<Weather />} />
         <Route path="/soil" element={<SoilIntelligence />} />
         <Route path="/crops" element={<CropRecommendations />} />
+        <Route path="/actions" element={<ActionPlanner />} />
+        <Route path="/disease" element={<CropDisease />} />
         <Route path="/settings" element={<Settings />} />
       </Route>
       <Route element={<AdminLayout />}>

@@ -5,12 +5,14 @@ import {
   Check,
   ChevronDown,
   ChevronRight,
+  ClipboardList,
   CloudSun,
   FlaskConical,
   LayoutDashboard,
   LogOut,
   MapPin,
   MapPinned,
+  Microscope,
   Menu as MenuIcon,
   PanelLeftClose,
   PanelLeftOpen,
@@ -40,6 +42,8 @@ const NAV: NavEntry[] = [
   { to: "/weather", label: "Weather Intelligence", icon: CloudSun },
   { to: "/soil", label: "Soil Intelligence", icon: FlaskConical },
   { to: "/crops", label: "Crop Recommendations", icon: Wheat },
+  { to: "/actions", label: "Action Planner", icon: ClipboardList },
+  { to: "/disease", label: "Crop Disease", icon: Microscope },
   { to: "/settings", label: "Settings", icon: Settings },
 ];
 
@@ -49,6 +53,8 @@ const SECTION_TITLES: Record<string, string> = {
   "/weather": "Weather Intelligence",
   "/soil": "Soil Intelligence",
   "/crops": "Crop Recommendations",
+  "/actions": "Action Planner",
+  "/disease": "Crop Disease",
   "/settings": "Settings",
   "/admin": "Admin",
 };

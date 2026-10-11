@@ -1,9 +1,11 @@
-import { useState, type ImgHTMLAttributes } from "react";
+import { useState, type ImgHTMLAttributes, type ReactNode } from "react";
 import { Sprout } from "lucide-react";
 import { cn } from "../../lib/cn";
 
 interface ImageWithFallbackProps extends ImgHTMLAttributes<HTMLImageElement> {
   wrapperClassName?: string;
+  /** Optional custom placeholder rendered when `src` is missing or fails to load. */
+  fallback?: ReactNode;
 }
 
 /**
@@ -15,11 +17,13 @@ export function ImageWithFallback({
   alt = "",
   className,
   wrapperClassName,
+  fallback,
   ...rest
 }: ImageWithFallbackProps) {
   const [failed, setFailed] = useState(false);
 
   if (failed || !src) {
+    if (fallback) return <>{fallback}</>;
     return (
       <div
         role="img"

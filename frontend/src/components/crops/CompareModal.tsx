@@ -1,4 +1,4 @@
-import { useEffect, useState } from "react";
+import { useEffect, useRef, useState } from "react";
 import { createPortal } from "react-dom";
 import { AnimatePresence, motion } from "framer-motion";
 import {
@@ -32,6 +32,23 @@ import type {
 } from "../../types/crop";
 
 const MAX_COMPARE = 3;
+
+/**
+ * The compare endpoint must return the full `CompareRead` object. Guard against
+ * a legacy/partial payload (e.g. a bare array of crop evaluations) so a shape
+ * mismatch shows a clear message instead of throwing inside render and taking
+ * the whole page down with it.
+ */
+function isCompareRead(value: unknown): value is CompareRead {
+  if (!value || typeof value !== "object" || Array.isArray(value)) return false;
+  const candidate = value as Partial<CompareRead>;
+  return (
+    !!candidate.context &&
+    typeof candidate.context === "object" &&
+    Array.isArray(candidate.ranking) &&
+    Array.isArray(candidate.factors)
+  );
+}
 
 function initialSelection(candidates: CropEvaluation[], seed: number[]): number[] {
   const available = new Set(candidates.map((crop) => crop.crop_id));
@@ -89,6 +106,9 @@ function SectionTitle({
 }
 
 function RankingEntry({ entry }: { entry: CompareRankedRead }) {
+  const supporting = entry.supporting ?? [];
+  const constraints = entry.constraints ?? [];
+  const missing = entry.missing ?? [];
   return (
     <li className="rounded-card border border-border bg-surface-muted p-3">
       <div className="flex flex-wrap items-center gap-2">
@@ -109,22 +129,22 @@ function RankingEntry({ entry }: { entry: CompareRankedRead }) {
         </span>
       </div>
       <p className="mt-1 text-[11px] text-ink-muted">
-        {Math.round(entry.coverage * 100)}% of weighed factors evaluated
+        {Math.round((entry.coverage ?? 0) * 100)}% of weighed factors evaluated
       </p>
       <div className="mt-2 space-y-0.5 text-xs">
-        {entry.supporting.length > 0 && (
+        {supporting.length > 0 && (
           <p className="text-emerald-700">
-            <span className="font-semibold">Supports:</span> {entry.supporting.join(" · ")}
+            <span className="font-semibold">Supports:</span> {supporting.join(" · ")}
           </p>
         )}
-        {entry.constraints.length > 0 && (
+        {constraints.length > 0 && (
           <p className="text-red-700">
-            <span className="font-semibold">Against:</span> {entry.constraints.join(" · ")}
+            <span className="font-semibold">Against:</span> {constraints.join(" · ")}
           </p>
         )}
-        {entry.missing.length > 0 && (
+        {missing.length > 0 && (
           <p className="text-amber-700">
-            <span className="font-semibold">Not recorded:</span> {entry.missing.join(", ")}
+            <span className="font-semibold">Not recorded:</span> {missing.join(", ")}
           </p>
         )}
       </div>
@@ -156,13 +176,28 @@ export function CompareModal({
   const [view, setView] = useState<"pick" | "result">("pick");
   const [comparing, setComparing] = useState(false);
   const [error, setError] = useState<string | null>(null);
+  const wasOpen = useRef(false);
 
+  // Only re-initialise on the false -> true transition, and only when a new
+  // seed is supplied. Simply closing and reopening keeps the current selection
+  // and the last comparison so nothing the farmer did is lost.
   useEffect(() => {
-    if (!open) return;
-    setError(null);
-    setComparison(null);
-    setView("pick");
-    setSelected(initialSelection(candidates, seed));
+    if (open && !wasOpen.current) {
+      setError(null);
+      if (seed.length > 0) {
+        setSelected(initialSelection(candidates, seed));
+        setComparison(null);
+        setView("pick");
+      } else {
+        setSelected((current) => {
+          const stillValid = current.filter((id) =>
+            candidates.some((crop) => crop.crop_id === id)
+          );
+          return stillValid.length > 0 ? stillValid : initialSelection(candidates, seed);
+        });
+      }
+    }
+    wasOpen.current = open;
   }, [open, candidates, seed]);
 
   const toggle = (cropId: number) => {
@@ -178,6 +213,13 @@ export function CompareModal({
     setComparing(true);
     try {
       const data = await cropsApi.compare(fieldId, selected);
+      if (!isCompareRead(data)) {
+        setComparison(null);
+        setError(
+          "The comparison service returned an unexpected response. Please close this and try again."
+        );
+        return;
+      }
       setComparison(data);
       setView("result");
     } catch (err) {
@@ -194,6 +236,12 @@ export function CompareModal({
   };
 
   if (typeof document === "undefined") return null;
+
+  const ranking = comparison?.ranking ?? [];
+  const factors = comparison?.factors ?? [];
+  const differences = comparison?.differences ?? [];
+  const rankChangers = comparison?.rank_changers ?? [];
+  const infoToCollect = comparison?.info_to_collect ?? [];
 
   return createPortal(
     <AnimatePresence>
@@ -304,17 +352,17 @@ export function CompareModal({
                 <div className="space-y-6">
                   <div className="flex flex-wrap items-center gap-2 text-[11px] text-ink-muted">
                     <span className="rounded-lg bg-surface-sunken px-2.5 py-1.5 capitalize">
-                      Season · {seasonLabel(comparison.context.season)}
+                      Season · {seasonLabel(comparison.context?.season)}
                     </span>
                     <span className="inline-flex items-center gap-1.5 rounded-lg bg-surface-sunken px-2.5 py-1.5">
                       <FlaskConical className="h-3.5 w-3.5" />
-                      {comparison.context.soil.has_measurement
+                      {comparison.context?.soil?.has_measurement
                         ? "Soil test compared"
                         : "No soil test recorded"}
                     </span>
                     <span className="inline-flex items-center gap-1.5 rounded-lg bg-surface-sunken px-2.5 py-1.5">
                       <CloudSun className="h-3.5 w-3.5" />
-                      {comparison.context.weather.available
+                      {comparison.context?.weather?.available
                         ? "Live forecast included as risk context"
                         : "Live weather not available"}
                     </span>
@@ -332,19 +380,19 @@ export function CompareModal({
                       Ranking on current evidence
                     </SectionTitle>
                     <ol className="space-y-2">
-                      {comparison.ranking.map((entry) => (
+                      {ranking.map((entry) => (
                         <RankingEntry key={entry.crop_id} entry={entry} />
                       ))}
                     </ol>
                   </section>
 
-                  {comparison.differences.length > 0 && (
+                  {differences.length > 0 && (
                     <section className="space-y-2">
                       <SectionTitle icon={<CircleAlert className="h-3.5 w-3.5" />}>
                         Why this order
                       </SectionTitle>
                       <ol className="space-y-1.5">
-                        {comparison.differences.map((line, index) => (
+                        {differences.map((line, index) => (
                           <li
                             key={index}
                             className="flex items-start gap-2 text-sm leading-relaxed text-ink-soft"
@@ -374,7 +422,7 @@ export function CompareModal({
                             <th className="border-b border-border bg-surface-muted px-3 py-2.5">
                               Factor
                             </th>
-                            {comparison.ranking.map((entry) => (
+                            {ranking.map((entry) => (
                               <th
                                 key={entry.crop_id}
                                 className="border-b border-l border-border bg-surface-muted px-3 py-2.5"
@@ -385,7 +433,7 @@ export function CompareModal({
                           </tr>
                         </thead>
                         <tbody>
-                          {comparison.factors.map((row) => (
+                          {factors.map((row) => (
                             <tr key={row.factor} className="align-top">
                               <td className="border-b border-border px-3 py-3">
                                 <p className="text-sm font-semibold text-ink">{row.label}</p>
@@ -409,23 +457,19 @@ export function CompareModal({
 
                     {/* Mobile factor cards */}
                     <div className="space-y-3 md:hidden">
-                      {comparison.factors.map((row) => (
-                        <MobileFactorRow
-                          key={row.factor}
-                          row={row}
-                          ranking={comparison.ranking}
-                        />
+                      {factors.map((row) => (
+                        <MobileFactorRow key={row.factor} row={row} ranking={ranking} />
                       ))}
                     </div>
                   </section>
 
-                  {comparison.rank_changers.length > 0 && (
+                  {rankChangers.length > 0 && (
                     <section className="space-y-2">
                       <SectionTitle icon={<ShieldAlert className="h-3.5 w-3.5" />}>
                         What could change the order
                       </SectionTitle>
                       <ul className="space-y-1.5">
-                        {comparison.rank_changers.map((line, index) => (
+                        {rankChangers.map((line, index) => (
                           <li
                             key={index}
                             className="flex items-start gap-2 text-sm leading-relaxed text-ink-soft"
@@ -442,14 +486,14 @@ export function CompareModal({
                     <SectionTitle icon={<FlaskConical className="h-3.5 w-3.5" />}>
                       Information to record next
                     </SectionTitle>
-                    {comparison.info_to_collect.length === 0 ? (
+                    {infoToCollect.length === 0 ? (
                       <p className="text-sm text-ink-soft">
                         Nothing missing — every documented requirement was checked for the crops
                         you compared.
                       </p>
                     ) : (
                       <ul className="space-y-1.5">
-                        {comparison.info_to_collect.map((item) => (
+                        {infoToCollect.map((item) => (
                           <li
                             key={item.input}
                             className="flex items-start gap-2 text-sm leading-relaxed text-ink-soft"
@@ -532,7 +576,7 @@ function MobileFactorRow({
       </p>
       <p className="mt-1 text-xs leading-relaxed text-ink-muted">{row.explanation}</p>
       <div className="mt-2 space-y-1.5">
-        {row.cells.map((cell) => {
+        {(row.cells ?? []).map((cell) => {
           const crop = ranking.find((entry) => entry.crop_id === cell.crop_id);
           return (
             <div

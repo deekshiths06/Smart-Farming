@@ -9,7 +9,6 @@ import {
   MapPinned,
   Plus,
   Sprout,
-  Wheat,
 } from "lucide-react";
 import { useAuth } from "../hooks/useAuth";
 import { useFields } from "../hooks/useFields";
@@ -53,7 +52,7 @@ const QUICK_LINKS = [
     title: "Soil intelligence",
     body: "See pH, NPK and more — measured against what each crop needs.",
     image: "/assets/fertile-soil.jpg",
-    alt: "Hand holding fertile dark soil",
+    alt: "Hands sifting fertile soil in a garden bed",
   },
   {
     to: "/crops",

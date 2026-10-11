@@ -133,6 +133,82 @@ def region_score(field_state: Optional[str], allowed: Optional[list[str]]) -> Op
     return 1.0 if field_state in allowed else 0.0
 
 
+def _to_float(value) -> Optional[float]:
+    if value is None:
+        return None
+    try:
+        return float(value)
+    except (TypeError, ValueError):
+        return None
+
+
+def forecast_temperature_score(
+    daily: list[dict],
+    temp_min: Optional[float],
+    temp_max: Optional[float],
+    factor: str = "temperature",
+) -> tuple[Optional[float], Optional[float]]:
+    """Score the field's live temperature forecast against a crop's band.
+
+    The representative value is the mean of each forecast day's mid-point
+    ``(max + min) / 2`` — a transparent summary of the growing temperature the
+    forecast implies for this exact location. Missing forecast or band ->
+    ``(None, None)`` so the caller reports it as a gap, never a guess.
+    """
+    if temp_min is None and temp_max is None:
+        return None, None
+    means: list[float] = []
+    for day in daily or []:
+        high = _to_float(day.get("temperature_2m_max"))
+        low = _to_float(day.get("temperature_2m_min"))
+        if high is not None and low is not None:
+            means.append((high + low) / 2.0)
+        elif high is not None:
+            means.append(high)
+        elif low is not None:
+            means.append(low)
+    if not means:
+        return None, None
+    value = sum(means) / len(means)
+    return range_score(value, temp_min, temp_max, factor), value
+
+
+def forecast_rainfall_score(
+    daily: list[dict],
+    rainfall_min: Optional[float],
+    rainfall_max: Optional[float],
+    duration_min: Optional[float],
+    duration_max: Optional[float],
+    factor: str = "rainfall",
+) -> tuple[Optional[float], Optional[float]]:
+    """Score the field's forecast rainfall against a crop's seasonal band.
+
+    A crop's documented rainfall band is *seasonal* (mm over the whole season),
+    while live weather only offers a short forecast. Comparing them directly
+    would be dishonest, so the band is pro-rated to the forecast window using
+    the crop's own documented duration (``band * days / duration``). The
+    forecast total is then scored against that window-equivalent band. Without a
+    duration or a rainfall band the comparison cannot be made and the factor is
+    reported as missing rather than invented.
+    """
+    precip = [p for p in (_to_float(day.get("precipitation_sum")) for day in daily or []) if p is not None]
+    if not precip:
+        return None, None
+    if rainfall_min is None and rainfall_max is None:
+        return None, None
+    durations = [d for d in (duration_min, duration_max) if d is not None]
+    if not durations:
+        return None, None
+    duration = sum(durations) / len(durations)
+    if duration <= 0:
+        return None, None
+    days = len(precip)
+    total = sum(precip)
+    window_min = rainfall_min * days / duration if rainfall_min is not None else None
+    window_max = rainfall_max * days / duration if rainfall_max is not None else None
+    return range_score(total, window_min, window_max, factor), total
+
+
 __all__ = [
     "clamp01",
     "range_score",
@@ -140,4 +216,6 @@ __all__ = [
     "texture_score",
     "season_score",
     "region_score",
+    "forecast_temperature_score",
+    "forecast_rainfall_score",
 ]

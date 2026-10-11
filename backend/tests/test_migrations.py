@@ -64,8 +64,8 @@ def test_fresh_database_upgrade(tmp_path):
         "soil_status",
     ):
         assert required in cols, required
-    # Head of the chain: 0001 -> 0002 -> 0003 -> 0004_crop_intelligence.
-    assert _version(db_path) == [("0004_crop_intelligence",)]
+    # Head of the chain: 0001 -> ... -> 0007 -> 0008_disease_identification.
+    assert _version(db_path) == [("0008_disease_identification",)]
 
     conn = sqlite3.connect(db_path)
     try:
@@ -74,6 +74,7 @@ def test_fresh_database_upgrade(tmp_path):
         soil_reports_cols = [row[1] for row in conn.execute("PRAGMA table_info(soil_reports)")]
         reference_count = conn.execute("select count(*) from soil_reference_ranges").fetchone()[0]
         crop_count = conn.execute("select count(*) from crops").fetchone()[0]
+        crop_names = {r[0] for r in conn.execute("select name from crops")}
         requirement_count = conn.execute("select count(*) from crop_requirements").fetchone()[0]
         config_count = conn.execute("select count(*) from crop_scoring_config").fetchone()[0]
         required_source = conn.execute(
@@ -82,6 +83,10 @@ def test_fresh_database_upgrade(tmp_path):
         scored = conn.execute(
             "select count(*) from crop_requirements where factor = 'ph' and min_value is not null"
         ).fetchone()[0]
+        action_cols = [row[1] for row in conn.execute("PRAGMA table_info(field_actions)")]
+        action_count = conn.execute("select count(*) from field_actions").fetchone()[0]
+        disease_cols = [row[1] for row in conn.execute("PRAGMA table_info(disease_assessments)")]
+        disease_count = conn.execute("select count(*) from disease_assessments").fetchone()[0]
     finally:
         conn.close()
     assert "ix_fields_user_id" in names
@@ -95,7 +100,33 @@ def test_fresh_database_upgrade(tmp_path):
     assert {"crops", "crop_requirements", "crop_scoring_config", "crop_recommendations"} <= set(
         tables
     )
-    assert crop_count >= 10
+    # Action Planner table exists with its key columns and stays empty (no plans
+    # are invented at migration time).
+    assert "field_actions" in tables
+    assert {
+        "action_key",
+        "category",
+        "group_key",
+        "priority",
+        "completed",
+        "completed_at",
+        "steps",
+        "materials",
+        "check_first",
+        "avoid",
+        "done_when",
+    } <= set(action_cols)
+    assert action_count == 0
+    # AI Crop Disease Identification table exists and stays empty at migration
+    # time (an assessment is only ever created by an explicit request).
+    assert "disease_assessments" in tables
+    assert {"crop", "crop_label", "status", "predicted_class", "confidence", "disclaimer"} <= set(
+        disease_cols
+    )
+    assert disease_count == 0
+    # Prompt 8 widened the catalogue well beyond the original fixed twelve.
+    assert crop_count >= 25
+    assert {"barley", "soybean", "mustard", "jute", "potato", "onion", "black_gram"} <= crop_names
     assert requirement_count >= crop_count
     assert config_count == 1
     assert required_source == 0
@@ -142,11 +173,11 @@ def test_prompt1_database_upgrade_keeps_and_maps_data(tmp_path):
     assert colmap["area_unit"] == "acre"
     assert colmap["location_confirmed"] == 0
     assert "water_status" not in colmap  # column dropped
-    assert version == [("0004_crop_intelligence",)]
+    assert version == [("0008_disease_identification",)]
 
 
 def test_migration_is_idempotent_on_second_run(tmp_path):
     db_path = (tmp_path / "twice.db").as_posix()
     _upgrade(f"sqlite:///{db_path}")
     _upgrade(f"sqlite:///{db_path}")  # already at head -> no-op
-    assert _version(db_path) == [("0004_crop_intelligence",)]
+    assert _version(db_path) == [("0008_disease_identification",)]

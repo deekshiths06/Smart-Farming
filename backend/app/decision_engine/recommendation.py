@@ -16,7 +16,12 @@ It is deliberately transparent and honest:
 - stale or future-dated soil tests are excluded with a note;
 - a crop whose season or region does not match the current one is genuinely
   not recommended now, regardless of other matches;
-- weather is context only and never silently changes the score;
+- the field's own location is used honestly: its live forecast temperature and
+  rainfall are compared to the crop's *documented* bands (rainfall pro-rated to
+  the forecast window using the crop's documented duration), so two locations
+  with different forecasts score differently. The forecast only ever moves the
+  weighted suitability between 0 and 1 - it is never invented, and when it is
+  unavailable those factors are reported as gaps, not as failures;
 - outputs are never yields, prices, profits or pest/disease predictions.
 """
 
@@ -95,7 +100,13 @@ def _first_value(req: CropRequirement) -> Optional[str]:
 
 
 def _factor_score(
-    factor: str, req: CropRequirement, field: Field, soil: SoilContext, today: date
+    factor: str,
+    req: CropRequirement,
+    req_map: dict[str, CropRequirement],
+    field: Field,
+    soil: SoilContext,
+    today: date,
+    weather: Optional[WeatherSnapshot] = None,
 ) -> tuple[Optional[float], object, str]:
     """Return (score, input_value, detail) for one scored factor."""
     if factor == C.FACTOR_PH:
@@ -150,6 +161,65 @@ def _factor_score(
             return None, None, "Field region (state) is not recorded."
         score = scoring.region_score(field.state, allowed)
         return score, field.state, f"Field region {field.state} against {', '.join(allowed)}."
+
+    if factor == C.FACTOR_TEMPERATURE:
+        if weather is None or not weather.daily:
+            return (
+                None,
+                None,
+                "Live temperature forecast is not available for this field, so this "
+                "crop's temperature band could not be checked.",
+            )
+        score, value = scoring.forecast_temperature_score(
+            weather.daily, req.min_value, req.max_value, factor
+        )
+        if score is None or value is None:
+            return None, None, "The temperature forecast could not be compared to this crop's band."
+        if req.min_value is not None and req.max_value is not None:
+            band = f"{req.min_value:g}–{req.max_value:g} °C"
+        elif req.min_value is not None:
+            band = f"{req.min_value:g} °C and above"
+        else:
+            band = f"up to {req.max_value:g} °C"
+        return (
+            score,
+            round(value, 2),
+            f"Forecast mean {value:.1f} °C over the next {len(weather.daily)} day(s) "
+            f"against the crop's indicative band of {band}.",
+        )
+
+    if factor == C.FACTOR_RAINFALL:
+        if weather is None or not weather.daily:
+            return (
+                None,
+                None,
+                "Live rainfall forecast is not available for this field, so this "
+                "crop's rainfall band could not be checked.",
+            )
+        duration_req = req_map.get(C.FACTOR_DURATION)
+        duration_min = duration_req.min_value if duration_req else None
+        duration_max = duration_req.max_value if duration_req else None
+        score, value = scoring.forecast_rainfall_score(
+            weather.daily,
+            req.min_value,
+            req.max_value,
+            duration_min,
+            duration_max,
+            factor,
+        )
+        if score is None or value is None:
+            return (
+                None,
+                None,
+                "The rainfall forecast could not be compared to this crop's seasonal band.",
+            )
+        return (
+            score,
+            round(value, 2),
+            f"Forecast {value:.0f} mm over the next {len(weather.daily)} day(s) against "
+            "this crop's seasonal rainfall band, pro-rated to the forecast window using "
+            "its typical duration.",
+        )
 
     return None, None, "Unknown factor."
 
@@ -335,7 +405,7 @@ def evaluate_crop(
             continue
 
         declared.append(factor)
-        score, value, detail = _factor_score(factor, req, field, soil, today)
+        score, value, detail = _factor_score(factor, req, req_map, field, soil, today, weather)
         if score is None:
             status = "missing_input"
             missing.append(factor)
@@ -378,6 +448,15 @@ def evaluate_crop(
     )
     preliminary = bool(missing)
 
+    # Plain-language grouping plus the supporting/conflicting/missing evidence the
+    # category is built from, so the farmer can see *why* it was placed there.
+    fail = essential_fail + drift_fail
+    suitable = config["suitable_threshold"]
+    match_category = C.classify_match(status, preliminary)
+    supporting = [C.FACTOR_LABELS[f] for f in evaluated if evaluated[f] >= suitable]
+    conflicting = [C.FACTOR_LABELS[f] for f in fail]
+    missing_labels = [C.FACTOR_LABELS[f] for f in missing]
+
     # Weather risks: global rainfall risks plus heat/cold vs this crop's band.
     risks = weather_risk.global_risks(weather)
     temp_req = req_map.get(C.FACTOR_TEMPERATURE)
@@ -386,10 +465,8 @@ def evaluate_crop(
             weather, temp_req.min_value, temp_req.max_value, crop.display_name
         )
 
-    reasons = _reasons(
-        crop, status, overall, coverage, missing, essential_fail + drift_fail, config
-    )
-    next_steps = _next_steps(status, missing, essential_fail + drift_fail, field, soil, weather, config)
+    reasons = _reasons(crop, status, overall, coverage, missing, fail, config)
+    next_steps = _next_steps(status, missing, fail, field, soil, weather, config)
 
     notes = list(soil.notes)
     if weather is None:
@@ -411,6 +488,11 @@ def evaluate_crop(
         "description": crop.description,
         "status": status,
         "status_label": C.STATUS_LABELS[status],
+        "match_category": match_category,
+        "match_category_label": C.MATCH_CATEGORY_LABELS[match_category],
+        "supporting": supporting,
+        "conflicting": conflicting,
+        "missing": missing_labels,
         "score": round(overall, 4) if overall is not None else None,
         "coverage": round(coverage, 4),
         "preliminary": preliminary,

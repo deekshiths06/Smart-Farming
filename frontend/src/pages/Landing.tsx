@@ -33,13 +33,13 @@ const FEATURES = [
     title: "Soil intelligence",
     body: "Record soil test results and water availability for each field, and see them at a glance against crop needs.",
     image: "/assets/fertile-soil.jpg",
-    alt: "Hand holding fertile dark soil",
+    alt: "Hands sifting fertile soil in a garden bed",
   },
   {
     icon: <Sprout className="h-5 w-5" />,
     title: "Year-round crop guidance",
     body: "Get ranked, honest recommendations for every season — with the reasons behind each score clearly explained.",
-    image: "/assets/rice-paddy.jpg",
+    image: "/assets/crops/rice.jpg",
     alt: "Lush green rice paddy in a field",
   },
 ];
@@ -76,7 +76,7 @@ export default function Landing() {
             className="inline-flex items-center gap-2.5 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-white focus-visible:ring-offset-2 focus-visible:ring-offset-forest-950"
             aria-label="ANNADATA home"
           >
-            <Logo inverted className="h-9 w-9" />
+            <Logo inverted showWordmark={false} className="h-9 w-9" />
             <span className="text-lg font-extrabold tracking-tight text-white">ANNADATA</span>
           </Link>
 
@@ -328,7 +328,7 @@ export default function Landing() {
       <footer className="border-t border-border bg-forest-950">
         <div className="mx-auto flex max-w-7xl flex-col items-start justify-between gap-6 px-5 py-10 sm:flex-row sm:items-center sm:px-8">
           <div className="inline-flex items-center gap-2.5">
-            <Logo inverted className="h-8 w-8" />
+            <Logo inverted showWordmark={false} className="h-8 w-8" />
             <div>
               <p className="text-sm font-extrabold tracking-tight text-white">ANNADATA</p>
               <p className="text-xs text-white/55">Intelligent farming. Better decisions.</p>

@@ -1,5 +1,11 @@
 export type CropStatus = "suitable" | "not_recommended" | "needs_information";
 
+export type MatchCategory =
+  | "good_match"
+  | "possible_option"
+  | "needs_more_information"
+  | "important_limitations";
+
 export type FactorStatus = "evaluated" | "missing_input" | "not_required" | "context";
 
 export interface CropRequirement {
@@ -82,6 +88,16 @@ export interface CropEvaluation {
   description: string | null;
   status: CropStatus;
   status_label: string;
+  /** Plain-language grouping derived from the same evidence as `status`.
+   * Older persisted batches may not carry it; the client derives a fallback. */
+  match_category?: MatchCategory | "";
+  match_category_label?: string;
+  /** Labels of evaluated factors that met the threshold (why it fits). */
+  supporting?: string[];
+  /** Labels of factors that genuinely fail for this field (why not). */
+  conflicting?: string[];
+  /** Labels of documented requirements that could not be checked (what is missing). */
+  missing?: string[];
   score: number | null;
   coverage: number;
   /** True when some documented requirement could not be checked (e.g. no soil

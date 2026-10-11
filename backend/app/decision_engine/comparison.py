@@ -21,7 +21,9 @@ Honesty rules baked in:
   ranking is preliminary and that a higher score is not proof of a better match;
 - season/region mismatches and essential-factor shortfalls are reported as
   constraints, never as missing-data slashes;
-- live weather (if fetched) is reported as advisory context, not scored.
+- the field's live weather contributes to the score through the crop's
+  documented temperature and rainfall bands; forecast *risk warnings* remain
+  advisory context and never change the score.
 """
 
 from __future__ import annotations
@@ -122,6 +124,7 @@ def _per_crop(
     """
     threshold = config["suitable_threshold"]
     essentials = set(config["essential_factors"])
+    weather_factors = {C.FACTOR_TEMPERATURE, C.FACTOR_RAINFALL}
     constraints: list[str] = []
     supporting: list[str] = []
     missing: list[str] = []
@@ -139,8 +142,14 @@ def _per_crop(
         label = f["label"]
         short = f"{label} ({_pct(score)})"
         is_season_or_region = factor in (C.FACTOR_SEASON, C.FACTOR_REGION)
-        if (is_season_or_region and score == 0.0) or (
-            factor in essentials and score < threshold
+        # A season/region mismatch or an essential shortfall genuinely argues
+        # against the crop. A forecast temperature/rainfall below the crop's
+        # band is a softer concern, but it must still be shown rather than
+        # silently lowering the score.
+        if (
+            (is_season_or_region and score == 0.0)
+            or (factor in essentials and score < threshold)
+            or (factor in weather_factors and score < threshold)
         ):
             constraints.append(short)
         elif score >= threshold:

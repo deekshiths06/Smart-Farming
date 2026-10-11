@@ -6,8 +6,10 @@ import { Skeleton } from "../ui/Skeleton";
 import { cropsApi } from "../../services/crops";
 import { formatScore, seasonLabel } from "../../lib/crops";
 import { CropResultCard } from "./CropResultCard";
+import { CropDetailModal } from "./CropDetailModal";
 import { formatSoilDate } from "../../lib/soil";
-import type { RecommendationRead } from "../../types/crop";
+import { WATER_AVAILABILITY_LABELS, WATER_SOURCE_LABELS } from "../../lib/labels";
+import type { CropEvaluation, RecommendationRead } from "../../types/crop";
 
 const STATUS_ORDER = { suitable: 0, needs_information: 1, not_recommended: 2 } as const;
 
@@ -38,11 +40,13 @@ export function RecommendationDetailModal({
   const [rows, setRows] = useState<RecommendationRead[] | null>(null);
   const [error, setError] = useState<string | null>(null);
   const [loading, setLoading] = useState(false);
+  const [selected, setSelected] = useState<CropEvaluation | null>(null);
 
   useEffect(() => {
     if (!open) return;
     setRows(null);
     setError(null);
+    setSelected(null);
     setLoading(true);
     cropsApi
       .batch(fieldId, batchId)
@@ -54,10 +58,30 @@ export function RecommendationDetailModal({
   if (typeof document === "undefined") return null;
 
   const snapshot = rows?.[0]?.input_snapshot;
+  const snapshotField = (snapshot?.field ?? {}) as Record<string, unknown>;
+  const originalFieldName =
+    typeof snapshotField.field_name === "string" ? snapshotField.field_name : null;
+  const originalLocation =
+    [snapshotField.district, snapshotField.state]
+      .filter((part): part is string => typeof part === "string" && part.length > 0)
+      .join(", ") || null;
+  const originalWaterSource =
+    typeof snapshotField.water_source === "string" ? snapshotField.water_source : null;
+  const originalWaterAvailability =
+    typeof snapshotField.water_availability === "string"
+      ? snapshotField.water_availability
+      : null;
+  const hasOriginalInputs =
+    Boolean(snapshot) &&
+    (originalFieldName !== null ||
+      originalLocation !== null ||
+      originalWaterSource !== null ||
+      originalWaterAvailability !== null);
 
   return createPortal(
-    <AnimatePresence>
-      {open && (
+    <>
+      <AnimatePresence>
+        {open && (
         <motion.div
           className="fixed inset-0 z-[1000] flex items-center justify-center p-4"
           initial={{ opacity: 0 }}
@@ -150,9 +174,55 @@ export function RecommendationDetailModal({
                       )}
                     </div>
 
-                    {rows.map((row, index) => (
-                      <CropResultCard key={row.id} result={row.result} rank={index + 1} />
-                    ))}
+                    {hasOriginalInputs && (
+                      <div className="rounded-card border border-border bg-surface p-3">
+                        <p className="text-[11px] font-semibold uppercase tracking-wide text-ink-muted">
+                          Original inputs
+                        </p>
+                        <dl className="mt-2 grid gap-2 text-sm sm:grid-cols-2">
+                          <div className="flex items-baseline gap-2">
+                            <dt className="text-ink-muted">Field</dt>
+                            <dd className="min-w-0 truncate font-medium text-ink">
+                              {originalFieldName ?? "—"}
+                            </dd>
+                          </div>
+                          <div className="flex items-baseline gap-2">
+                            <dt className="text-ink-muted">Location</dt>
+                            <dd className="min-w-0 truncate font-medium text-ink">
+                              {originalLocation ?? "—"}
+                            </dd>
+                          </div>
+                          <div className="flex items-baseline gap-2">
+                            <dt className="text-ink-muted">Water source</dt>
+                            <dd className="min-w-0 truncate font-medium text-ink">
+                              {originalWaterSource
+                                ? WATER_SOURCE_LABELS[originalWaterSource] ??
+                                  originalWaterSource
+                                : "—"}
+                            </dd>
+                          </div>
+                          <div className="flex items-baseline gap-2">
+                            <dt className="text-ink-muted">Water availability</dt>
+                            <dd className="min-w-0 truncate font-medium text-ink">
+                              {originalWaterAvailability
+                                ? WATER_AVAILABILITY_LABELS[originalWaterAvailability] ??
+                                  originalWaterAvailability
+                                : "—"}
+                            </dd>
+                          </div>
+                        </dl>
+                      </div>
+                    )}
+
+                    <div className="grid grid-cols-1 gap-4 sm:grid-cols-2 lg:grid-cols-3">
+                      {rows.map((row) => (
+                        <CropResultCard
+                          key={row.id}
+                          result={row.result}
+                          onViewDetails={setSelected}
+                        />
+                      ))}
+                    </div>
 
                     <div className="flex items-center justify-end gap-2">
                       <span className="text-xs text-ink-muted">
@@ -169,7 +239,16 @@ export function RecommendationDetailModal({
           </motion.div>
         </motion.div>
       )}
-    </AnimatePresence>,
+      </AnimatePresence>
+      <CropDetailModal
+        open={selected !== null}
+        crop={selected}
+        config={snapshot?.scoring ?? null}
+        soil={snapshot?.soil ?? null}
+        weather={snapshot?.weather ?? null}
+        onClose={() => setSelected(null)}
+      />
+    </>,
     document.body
   );
 }

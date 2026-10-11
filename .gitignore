@@ -19,6 +19,9 @@ dist/
 *.sqlite
 *.sqlite3
 
+# Downloaded ML model weights (large; fetch with backend/scripts/download_disease_model.py)
+backend/models/plant_disease/*.onnx
+
 # Editor and operating system
 .vscode/
 .idea/

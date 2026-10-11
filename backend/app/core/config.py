@@ -50,5 +50,20 @@ class Settings:
     SOIL_REPORT_MAX_SIZE_MB: int = int(os.getenv("SOIL_REPORT_MAX_SIZE_MB", "10"))
     SOIL_REPORT_MAX_SIZE_BYTES: int = SOIL_REPORT_MAX_SIZE_MB * 1024 * 1024
 
+    # AI Crop Disease Identification
+    # Directory holding the pre-trained ONNX classifier and its class list.
+    # The model file (~92 MB) is NOT committed; see scripts/download_disease_model.py.
+    DISEASE_MODEL_DIR: Path = Path(
+        os.getenv("DISEASE_MODEL_DIR", str(BACKEND_DIR / "models" / "plant_disease"))
+    )
+    DISEASE_IMAGE_MAX_SIZE_MB: int = int(os.getenv("DISEASE_IMAGE_MAX_SIZE_MB", "5"))
+    DISEASE_IMAGE_MAX_SIZE_BYTES: int = DISEASE_IMAGE_MAX_SIZE_MB * 1024 * 1024
+    # Calibrated-confidence floor below which a result is reported as unreliable.
+    DISEASE_CONFIDENCE_THRESHOLD: float = float(
+        os.getenv("DISEASE_CONFIDENCE_THRESHOLD", "0.60")
+    )
+    # Guard against decompression-bomb images before Pillow decodes them.
+    DISEASE_MAX_IMAGE_PIXELS: int = int(os.getenv("DISEASE_MAX_IMAGE_PIXELS", "50000000"))
+
 
 settings = Settings()

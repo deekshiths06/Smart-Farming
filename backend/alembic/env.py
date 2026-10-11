@@ -13,6 +13,7 @@ if str(BACKEND_DIR) not in sys.path:
 from app.core.config import settings  # noqa: E402
 from app.database.session import Base  # noqa: E402
 from app.models import crop as _crop  # noqa: E402,F401
+from app.models import disease as _disease  # noqa: E402,F401
 from app.models import field as _field  # noqa: E402,F401
 from app.models import soil as _soil  # noqa: E402,F401
 from app.models import user as _user  # noqa: E402,F401

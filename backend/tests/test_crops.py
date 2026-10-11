@@ -319,6 +319,36 @@ def test_season_and_region_scores():
     assert scoring.region_score("Karnataka", None) is None
 
 
+def test_forecast_temperature_and_rainfall_scores():
+    days = [
+        {"temperature_2m_max": 30.0, "temperature_2m_min": 20.0, "precipitation_sum": 8.0}
+        for _ in range(7)
+    ]
+
+    score, value = scoring.forecast_temperature_score(days, 20, 35)
+    assert value == pytest.approx(25.0)  # mean of (30 + 20) / 2
+    assert score == 1.0
+    # A forecast far below the band is penalised, not silently ignored.
+    cold = [
+        {"temperature_2m_max": 10.0, "temperature_2m_min": 0.0, "precipitation_sum": 0.0}
+    ]
+    score_cold, value_cold = scoring.forecast_temperature_score(cold, 20, 35)
+    assert value_cold == pytest.approx(5.0)
+    assert score_cold == 0.0
+    # No band or no forecast -> missing input, never a guess.
+    assert scoring.forecast_temperature_score(days, None, None)[0] is None
+    assert scoring.forecast_temperature_score([], 20, 35)[0] is None
+
+    # Seasonal rainfall band is pro-rated to the 7-day window via duration:
+    # 1000-2000 mm over ~125 days -> 56-112 mm over 7 days; 56 mm is the edge.
+    score_r, value_r = scoring.forecast_rainfall_score(days, 1000, 2000, 100, 150)
+    assert value_r == pytest.approx(56.0)
+    assert score_r == 1.0
+    # Without a duration the seasonal band cannot be compared -> missing input.
+    assert scoring.forecast_rainfall_score(days, 1000, 2000, None, None)[0] is None
+    assert scoring.forecast_rainfall_score(days, None, None, 100, 150)[0] is None
+
+
 def test_load_config_falls_back_to_documented_defaults(db):
     config = load_config(db)
     assert config["weights"] == dict(C.DEFAULT_WEIGHTS)
@@ -551,6 +581,84 @@ def test_field_without_coordinates_skips_weather_honestly(client):
     assert "coordinates" in body["weather"]["reason"]
     for result in body["results"]:
         assert any("coordinates" in step for step in result["next_steps"])
+
+
+def test_forecast_temperature_and_rainfall_are_scored(client, fake_weather):
+    _, headers, field = register_with_field(client)
+    add_soil(client, headers, field["id"])
+    body = generate(client, headers, field["id"])
+
+    for result in body["results"]:
+        for factor in ("temperature", "rainfall"):
+            f = result["factors"][factor]
+            assert f["status"] == "evaluated", (result["crop_name"], factor)
+            assert f["input"] is not None
+            assert 0.0 <= f["score"] <= 1.0
+            assert f["source"], (result["crop_name"], factor)
+        # Duration stays context-only; it is never scored on its own.
+        assert result["context_factors"]["duration"]["status"] == "context"
+
+
+def test_location_forecast_changes_crop_scores(client, fake_weather):
+    """The field's location drives the score through its live forecast."""
+    _, headers, field = register_with_field(client)
+    add_soil(client, headers, field["id"])
+
+    fake_weather["snapshot"] = forecast(
+        daily=[
+            {"time": f"2026-10-{10 + i:02d}", "precipitation_sum": 40.0,
+             "temperature_2m_max": 38.0, "temperature_2m_min": 26.0}
+            for i in range(7)
+        ]
+    )
+    hot = generate(client, headers, field["id"])
+
+    fake_weather["snapshot"] = forecast(
+        daily=[
+            {"time": f"2026-10-{10 + i:02d}", "precipitation_sum": 0.5,
+             "temperature_2m_max": 18.0, "temperature_2m_min": 8.0}
+            for i in range(7)
+        ]
+    )
+    cool = generate(client, headers, field["id"])
+
+    hot_by = {r["crop_name"]: r for r in hot["results"]}
+    cool_by = {r["crop_name"]: r for r in cool["results"]}
+
+    # Same field, same soil/water/season - only the forecast (i.e. the location)
+    # changed - yet the temperature scores and overall estimate move with it.
+    assert any(
+        hot_by[name]["factors"]["temperature"]["score"]
+        != cool_by[name]["factors"]["temperature"]["score"]
+        for name in hot_by
+    )
+    assert any(hot_by[name]["score"] != cool_by[name]["score"] for name in hot_by)
+
+
+def test_missing_weather_marks_forecast_factors_missing(client):
+    _, headers, field = register_with_field(client)
+    add_soil(client, headers, field["id"])
+
+    from app.database.session import SessionLocal
+    from app.models.field import Field
+
+    session = SessionLocal()
+    try:
+        record = session.query(Field).filter(Field.id == field["id"]).first()
+        record.latitude = None
+        record.longitude = None
+        session.commit()
+    finally:
+        session.close()
+
+    body = generate(client, headers, field["id"])
+    assert body["weather"]["available"] is False
+    for result in body["results"]:
+        # No forecast -> the forecast factors are reported as gaps, never as zero.
+        assert result["factors"]["temperature"]["status"] == "missing_input"
+        assert result["factors"]["rainfall"]["status"] == "missing_input"
+        assert result["factors"]["temperature"]["input"] is None
+        assert result["preliminary"] is True
 
 
 def test_weather_service_failure_does_not_block_recommendations(client, fake_weather):
@@ -973,6 +1081,232 @@ def test_admin_reads_and_updates_scoring_config(client):
             json={"suitable_threshold": original["suitable_threshold"]},
             headers=headers,
         )
+
+
+# --- Prompt 8: dynamic, location-aware discovery ----------------------------
+
+
+def test_catalogue_covers_a_broad_range_of_indian_staples(client):
+    """The knowledge base is no longer a fixed twelve-crop shortlist."""
+    _, headers, _ = register_with_field(client)
+    crops = client.get("/api/crops", headers=headers).json()
+
+    assert len(crops) >= 25
+    names = {c["name"] for c in crops}
+    assert {
+        "barley",
+        "barnyard_millet",
+        "kodo_millet",
+        "foxtail_millet",
+        "black_gram",
+        "lentil",
+        "cowpea",
+        "mustard",
+        "soybean",
+        "sunflower",
+        "sesame",
+        "jute",
+        "potato",
+        "onion",
+        "chilli",
+        "brinjal",
+        "okra",
+    } <= names
+    assert {"cereal", "millet", "pulse", "oilseed", "fibre", "vegetable"} <= {
+        c["category"] for c in crops
+    }
+    # Every crop still carries provenance and documents both soil factors.
+    for crop in crops:
+        assert crop["source"], crop["name"]
+        assert crop["date_reviewed"], crop["name"]
+        detail = client.get(f"/api/crops/{crop['id']}", headers=headers).json()
+        factors = {r["factor"] for r in detail["requirements"]}
+        assert {"ph", "water", "texture", "season"} <= factors, crop["name"]
+        for req in detail["requirements"]:
+            assert req["source"], (crop["name"], req["factor"])
+            assert req["explanation"], (crop["name"], req["factor"])
+
+
+def test_generation_evaluates_the_whole_catalogue(client):
+    _, headers, field = register_with_field(client)
+    crops = client.get("/api/crops", headers=headers).json()
+    body = generate(client, headers, field["id"])
+
+    # One transparent result per active crop - nothing is silently dropped.
+    assert len(body["results"]) == len(crops)
+    assert {r["crop_id"] for r in body["results"]} == {c["id"] for c in crops}
+
+
+def test_classify_match_uses_evidence_not_new_thresholds():
+    assert C.classify_match(C.STATUS_SUITABLE, False) == C.MATCH_CATEGORY_GOOD
+    assert C.classify_match(C.STATUS_SUITABLE, True) == C.MATCH_CATEGORY_POSSIBLE
+    assert C.classify_match(C.STATUS_NEEDS_INFO, True) == C.MATCH_CATEGORY_NEEDS_INFO
+    assert C.classify_match(C.STATUS_NOT_RECOMMENDED, False) == C.MATCH_CATEGORY_LIMITATIONS
+
+
+def test_results_expose_match_category_and_evidence(client):
+    _, headers, field = register_with_field(client)
+    add_soil(client, headers, field["id"])
+    body = generate(client, headers, field["id"])
+
+    mapping = {
+        C.STATUS_SUITABLE: {C.MATCH_CATEGORY_GOOD, C.MATCH_CATEGORY_POSSIBLE},
+        C.STATUS_NEEDS_INFO: {C.MATCH_CATEGORY_NEEDS_INFO},
+        C.STATUS_NOT_RECOMMENDED: {C.MATCH_CATEGORY_LIMITATIONS},
+    }
+    for result in body["results"]:
+        assert result["match_category"] in C.MATCH_CATEGORY_ORDER
+        assert result["match_category_label"] == C.MATCH_CATEGORY_LABELS[result["match_category"]]
+        assert result["match_category"] in mapping[result["status"]]
+        # A "Good match" must genuinely be a full (non-preliminary) suitable crop.
+        if result["match_category"] == C.MATCH_CATEGORY_GOOD:
+            assert result["status"] == C.STATUS_SUITABLE
+            assert result["preliminary"] is False
+        # The evidence lists are present and consistent with the category.
+        assert isinstance(result["supporting"], list)
+        assert isinstance(result["conflicting"], list)
+        assert isinstance(result["missing"], list)
+        if result["match_category"] == C.MATCH_CATEGORY_LIMITATIONS:
+            assert result["conflicting"], result["display_name"]
+
+    # A documented requirement the crop does not declare is never scored - here
+    # no crop declares a region, so the factor is explicitly "not_required".
+    assert all(
+        result["factors"]["region"]["status"] == "not_required" for result in body["results"]
+    )
+
+
+def test_missing_soil_is_preliminary_never_a_confirmed_good_match(client):
+    _, headers, field = register_with_field(client)
+    body = generate(client, headers, field["id"])
+
+    assert body["soil"]["has_measurement"] is False
+    # With the soil factors unchecked, nothing may be presented as a confirmed
+    # good match; season-appropriate crops still surface as possible options.
+    assert all(r["match_category"] != C.MATCH_CATEGORY_GOOD for r in body["results"])
+    assert any(r["match_category"] == C.MATCH_CATEGORY_POSSIBLE for r in body["results"])
+    for result in body["results"]:
+        if result["match_category"] == C.MATCH_CATEGORY_POSSIBLE:
+            assert result["preliminary"] is True
+            assert "Soil pH" in result["missing"] or "Soil texture" in result["missing"]
+
+
+def test_different_soil_textures_change_the_scores(client):
+    """The same location and water, but a different recorded soil texture."""
+    email = fresh_email()
+    register_user(client, email=email)
+    headers = auth_headers(client, email)
+
+    clay_field = make_field(client, headers, field_name="Clay Field")
+    sandy_field = make_field(client, headers, field_name="Sandy Field")
+    add_soil(client, headers, clay_field["id"], ph=6.5, texture="clay")
+    add_soil(client, headers, sandy_field["id"], ph=6.5, texture="sandy_loam")
+
+    clay = {r["crop_name"]: r for r in generate(client, headers, clay_field["id"])["results"]}
+    sandy = {r["crop_name"]: r for r in generate(client, headers, sandy_field["id"])["results"]}
+
+    # Pearl millet documents light, sandy soils: the texture check differs, and
+    # that difference flows into the overall suitability estimate.
+    assert (
+        clay["pearl_millet"]["factors"]["texture"]["score"]
+        != sandy["pearl_millet"]["factors"]["texture"]["score"]
+    )
+    assert clay["pearl_millet"]["factors"]["texture"]["input"] == "clay"
+    assert sandy["pearl_millet"]["factors"]["texture"]["input"] == "sandy_loam"
+    assert clay["pearl_millet"]["score"] != sandy["pearl_millet"]["score"]
+
+
+def test_two_locations_change_ranking_through_the_forecast(client, fake_weather):
+    """Two locations with different forecasts must not return identical results."""
+    _, headers, field = register_with_field(client)
+    add_soil(client, headers, field["id"])
+
+    fake_weather["snapshot"] = forecast(
+        daily=[
+            {"time": f"2026-10-{10 + i:02d}", "precipitation_sum": 45.0,
+             "temperature_2m_max": 39.0, "temperature_2m_min": 27.0}
+            for i in range(7)
+        ]
+    )
+    hot = generate(client, headers, field["id"])
+
+    fake_weather["snapshot"] = forecast(
+        daily=[
+            {"time": f"2026-10-{10 + i:02d}", "precipitation_sum": 1.0,
+             "temperature_2m_max": 17.0, "temperature_2m_min": 7.0}
+            for i in range(7)
+        ]
+    )
+    cold = generate(client, headers, field["id"])
+
+    hot_scores = {r["crop_name"]: r["score"] for r in hot["results"]}
+    cold_scores = {r["crop_name"]: r["score"] for r in cold["results"]}
+    differing = [name for name in hot_scores if hot_scores[name] != cold_scores.get(name)]
+    assert differing, "the location forecast must change at least one estimate"
+
+    # The set of confirmed "good matches" is what discovery surfaces - with a
+    # different location it must change in membership or strength, because the
+    # recommended crops genuinely are assessed against that location's forecast.
+    hot_good = {
+        r["crop_name"]: r["score"]
+        for r in hot["results"]
+        if r["match_category"] == C.MATCH_CATEGORY_GOOD
+    }
+    cold_good = {
+        r["crop_name"]: r["score"]
+        for r in cold["results"]
+        if r["match_category"] == C.MATCH_CATEGORY_GOOD
+    }
+    assert hot_good, "a confirmed good match should exist for the warm forecast"
+    assert hot_good != cold_good, "the recommended good matches must react to location"
+
+
+def test_history_keeps_the_inputs_and_category_of_each_past_assessment(client):
+    _, headers, field = register_with_field(client)
+    add_soil(client, headers, field["id"])
+    first = generate(client, headers, field["id"])
+
+    # A second assessment after the field's inputs change.
+    from app.database.session import SessionLocal
+    from app.models.field import Field
+
+    session = SessionLocal()
+    try:
+        record = session.query(Field).filter(Field.id == field["id"]).first()
+        record.water_availability = "good"
+        session.commit()
+    finally:
+        session.close()
+
+    second = generate(client, headers, field["id"])
+    assert first["batch_id"] != second["batch_id"]
+
+    # Both batches remain independently readable, each with its own snapshot.
+    for batch_id in (first["batch_id"], second["batch_id"]):
+        rows = client.get(
+            f"/api/fields/{field['id']}/crops/recommendations/batches/{batch_id}",
+            headers=headers,
+        ).json()
+        assert rows
+        for row in rows:
+            assert row["input_snapshot"]["field"]["id"] == field["id"]
+            assert row["result"]["match_category"] in C.MATCH_CATEGORY_ORDER
+            assert row["engine_version"] == C.ENGINE_VERSION
+
+
+def test_compare_includes_match_category_for_every_crop(client):
+    _, headers, field = register_with_field(client)
+    add_soil(client, headers, field["id"])
+    crops = client.get("/api/crops", headers=headers).json()
+    wanted = [c["id"] for c in crops[:4]]
+
+    body = client.post(
+        f"/api/fields/{field['id']}/crops/compare",
+        json={"crop_ids": wanted},
+        headers=headers,
+    ).json()
+    for evaluation in body["results"]:
+        assert evaluation["match_category"] in C.MATCH_CATEGORY_ORDER
 
 
 # --- Live integration (real Open-Meteo) -------------------------------------

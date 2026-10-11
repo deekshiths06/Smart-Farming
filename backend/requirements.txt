@@ -9,10 +9,15 @@ bcrypt==5.0.0
 python-multipart==0.0.17
 httpx==0.27.2
 pandas==2.2.3
-numpy==1.26.4
+numpy==2.5.4
 scikit-learn==1.5.2
 email-validator==2.2.0
 python-dotenv==1.0.1
 requests==2.32.3
 alembic==1.20.0
 pytest==9.1.1
+# AI Crop Disease Identification - real image-classification inference.
+# The trained model itself is not stored in git; run
+# `python scripts/download_disease_model.py` to fetch it.
+onnxruntime==1.31.0
+pillow==12.3.0

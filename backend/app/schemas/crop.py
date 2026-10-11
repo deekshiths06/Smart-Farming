@@ -234,6 +234,14 @@ class CropEvaluationRead(BaseModel):
     description: Optional[str] = None
     status: str
     status_label: str
+    # Plain-language grouping of the evidence (good match / possible option /
+    # needs more information / important limitations). Older persisted rows
+    # predate it, so it defaults to empty and the client derives a fallback.
+    match_category: str = ""
+    match_category_label: str = ""
+    supporting: list[str] = []
+    conflicting: list[str] = []
+    missing: list[str] = []
     score: Optional[float] = None
     coverage: float
     # True when some documented requirement could not be checked (e.g. no soil
